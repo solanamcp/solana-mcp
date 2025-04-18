@@ -13,34 +13,34 @@ const { JitoJsonRpcClient } = require('./JitoJsonRpcClient');
 
 async function jupSwap(address, inputMint, outputMint, amount, order, from = "api") {
     console.log("jupSwap", address, inputMint, outputMint, amount, order, from);
-    // 处理SOL地址标准化
+    // Handle SOL address normalization
     if (inputMint === "11111111111111111111111111111111") {
         inputMint = NATIVE_MINT.toBase58();
     }
     if (outputMint === "11111111111111111111111111111111") {
         outputMint = NATIVE_MINT.toBase58();
     }
-    // 加载用户信息和配置
+    // Load user information and configuration
     let appmembers = await baseDao.syncQuery("SELECT wallet.secretkey,member.* FROM `appwalletuser` wallet LEFT JOIN appmember member ON member.tg_id = wallet.tg_id WHERE address = ?",
         [address]);
     let member = appmembers[0];
     const owner = Keypair.fromSecretKey(base58.default.decode(utils.decrypt(member.secretkey)));
     let mode = member.mode;
-    let slippage = member.qmode_slip; // 滑点
+    let slippage = member.qmode_slip; // Slippage
     if (mode == 1) {
-        slippage = member.jmode_slip; // 滑点
+        slippage = member.jmode_slip; // Slippage
     }
     let botSwapFeeRatio = 0.01;
     let solprice = await redis.get("solprice");
 
-    // 通知用户交易开始
+    // Notify the user that the transaction has started
     if (order) {
-        await bot.api.sendMessage(member.tg_id, "挂单已触发指定价格交易执行中..");
+        await bot.api.sendMessage(member.tg_id, "The order has triggered the specified price transaction and is being executed..");
     } else {
-        await bot.api.sendMessage(member.tg_id, "交易执行中..");
+        await bot.api.sendMessage(member.tg_id, "Transaction is being executed..");
     }
 
-    // 设置优先费用
+    // Set priority fee
     const isInputSol = inputMint === NATIVE_MINT.toBase58();
     let priorityFeeInSol = 0;
     if (isInputSol) {
@@ -53,7 +53,7 @@ async function jupSwap(address, inputMint, outputMint, amount, order, from = "ap
     priorityFeeInSol = priorityFeeInSol.toFixed(0);
 
     try {
-        // 获取Jupiter报价
+        // Get Jupiter quote
         const quoteConfig = {
             method: 'get',
             url: `https://lite-api.jup.ag/swap/v1/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount}&slippageBps=${slippage * 100}&platformFeeBps=${100}`,
@@ -63,11 +63,11 @@ async function jupSwap(address, inputMint, outputMint, amount, order, from = "ap
         };
         const quoteResponse = await axios.request(quoteConfig);
         if (!quoteResponse.data || quoteResponse.data.error) {
-            await bot.api.sendMessage(member.tg_id, "获取交易报价失败");
+            await bot.api.sendMessage(member.tg_id, "Failed to get transaction quote");
             return null;
         }
         console.log("swapResponse", quoteResponse.data);
-        // 执行交换交易 - 使用和示例代码一致的API端点和参数格式
+        // Execute swap transaction - use the same API endpoint and parameter format as the example code
         const swapResponse = await axios.post('https://lite-api.jup.ag/swap/v1/swap', {
             quoteResponse: quoteResponse.data,
             userPublicKey: owner.publicKey.toString(),
@@ -83,14 +83,14 @@ async function jupSwap(address, inputMint, outputMint, amount, order, from = "ap
 
         console.log("swapResponse", swapResponse.data);
         if (!swapResponse.data || !swapResponse.data.swapTransaction) {
-            await bot.api.sendMessage(member.tg_id, "创建交易失败");
+            await bot.api.sendMessage(member.tg_id, "Failed to create transaction");
             return null;
         }
 
-        // 解码交易
+        // Decode transaction
         const swapTransactionBuf = Buffer.from(swapResponse.data.swapTransaction, 'base64');
         let transaction = VersionedTransaction.deserialize(swapTransactionBuf);
-        // 计算交易手续费
+        // Calculate transaction fee
         let fee = 0;
         if (isInputSol) {
             fee = (amount * Number(botSwapFeeRatio)).toFixed(0);
@@ -102,12 +102,12 @@ async function jupSwap(address, inputMint, outputMint, amount, order, from = "ap
                 fee = ((Number(tokenAmount) * price * 1e9) / solprice * Number(botSwapFeeRatio)).toFixed(0);
             }
         }
-        // 如果是防夹交易模式，添加小费
+        // If anti-sandwich mode, add tip
         if (Number(mode) === 1) {
-            console.log("防夹交易模式");
+            console.log("Anti-sandwich mode");
         }
 
-        // 选择连接
+        // Choose connection
         let myConnection = connection;
         if (Number(mode) === 1) {
             myConnection = jitoConnection;
@@ -116,18 +116,18 @@ async function jupSwap(address, inputMint, outputMint, amount, order, from = "ap
         try {
             let txId = '';
 
-            // 防夹模式处理
+            // Anti-sandwich mode handling
             if (Number(mode) === 1) {
-                console.log("防夹交易模式");
-                // 获取最新的区块哈希
+                console.log("Anti-sandwich mode");
+                // Get the latest block hash
                 const recentBlockHash = await connection.getLatestBlockhash();
                 transaction.sign([owner]);
 
-                // 创建小费交易
+                // Create tip transaction
                 const serializedTransaction = transaction.serialize();
                 const base58Transaction = base58.default.encode(serializedTransaction);
 
-                // 获取小费金额
+                // Get tip amount
                 let floor = await axios.get("https://bundles.jito.wtf/api/v1/bundles/tip_floor");
                 let jitoset = await redis.get(member.tg_id+"jitoset");
                 if (jitoset == null) {
@@ -148,26 +148,26 @@ async function jupSwap(address, inputMint, outputMint, amount, order, from = "ap
                 }
 
                 lamports = lamports.toFixed(0);
-                console.log("小费金额:", lamports);
+                console.log("Tip amount:", lamports);
 
-                // 创建小费转账指令
+                // Create tip transfer instruction
                 const transferInstruction = SystemProgram.transfer({
-                    fromPubkey: owner.publicKey, // 付款地址
-                    toPubkey: new PublicKey(getRandomTipAccount()), // 收款地址
-                    lamports: lamports, // 转账金额
+                    fromPubkey: owner.publicKey, // Payer address
+                    toPubkey: new PublicKey(getRandomTipAccount()), // Recipient address
+                    lamports: lamports, // Transfer amount
                 });
 
-                // 创建小费交易
+                // Create tip transaction
                 const tipTransaction = new Transaction().add(transferInstruction);
                 tipTransaction.recentBlockhash = recentBlockHash.blockhash;
                 tipTransaction.feePayer = owner.publicKey;
                 tipTransaction.sign(owner);
 
-                // 序列化小费交易
+                // Serialize tip transaction
                 const serializedTipTransaction = tipTransaction.serialize();
                 const base58TipTransaction = base58.default.encode(serializedTipTransaction);
 
-                // 使用 JitoJsonRpcClient 发送交易包
+                // Use JitoJsonRpcClient to send transaction bundle
                 const jitoClient = new JitoJsonRpcClient('https://mainnet.block-engine.jito.wtf/api/v1', "");
                 const result = await jitoClient.sendBundle([[base58Transaction, base58TipTransaction]]);
                 txId = result.result;
@@ -179,20 +179,20 @@ async function jupSwap(address, inputMint, outputMint, amount, order, from = "ap
                 });
             }
 
-            // 计算要记录的交易数据
+            // Calculate transaction data to record
             const type = isInputSol ? "buy" : "sell";
             const inamount = isInputSol ? 0 : amount;
             const recordAmount = isInputSol ? amount : 0;
 
-            // 发送交易确认消息
+            // Send transaction confirmation message
             const message = await bot.api.sendMessage(member.tg_id,
-                "✅已广播正在链上交易中！" + (Number(mode) == 0 ? "[" + await lanutils.lan("djck", member.tg_id) + "](https://solscan.io/tx/" + txId + ")" : "") + " \n",
+                "✅Broadcasted and being processed on-chain!" + (Number(mode) == 0 ? "[" + await lanutils.lan("djck", member.tg_id) + "](https://solscan.io/tx/" + txId + ")" : "") + " \n",
                 {
                     parse_mode: "Markdown",
                     disable_web_page_preview: true
                 }
             );
-            // 插入交易记录
+            // Insert transaction record
             await baseDao.syncQuery(
                 "INSERT INTO `appswaporder` (`address`, `token`, `intoken`, `amount`, `hash`, `time`, `type`, `dex`, `upgas`, `inamount`, `price`, `fee`, `check`, `chatid`, `messageId`, `from`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 [
@@ -214,23 +214,23 @@ async function jupSwap(address, inputMint, outputMint, amount, order, from = "ap
                     from
                 ]
             );
-            console.log("交易hash", txId);
+            console.log("Transaction hash", txId);
             return txId;
         } catch (e) {
-            console.error("交易执行失败:", e);
-            await bot.api.sendMessage(member.tg_id, "交易失败");
+            console.error("Transaction execution failed:", e);
+            await bot.api.sendMessage(member.tg_id, "Transaction failed");
             return null;
         }
     } catch (error) {
-        console.error("Jupiter API调用失败:", error);
-        await bot.api.sendMessage(member.tg_id, "交易过程中出错");
+        console.error("Jupiter API call failed:", error);
+        await bot.api.sendMessage(member.tg_id, "An error occurred during the transaction");
         return null;
     }
 }
 
-// 高级交易功能
+// Advanced trading functionality
 async function advanceJupSwap(address, inputMint, outputMint, amount, percent, from = "api") {
-    // 处理SOL地址标准化
+    // Handle SOL address normalization
     if (inputMint === "11111111111111111111111111111111") {
         inputMint = NATIVE_MINT.toBase58();
     }
@@ -238,23 +238,23 @@ async function advanceJupSwap(address, inputMint, outputMint, amount, percent, f
         outputMint = NATIVE_MINT.toBase58();
     }
 
-    // 加载用户信息和配置
+    // Load user information and configuration
     let appmembers = await baseDao.syncQuery("SELECT wallet.secretkey,member.* FROM `appwalletuser` wallet LEFT JOIN appmember member ON member.tg_id = wallet.tg_id WHERE address = ?",
         [address]);
     let member = appmembers[0];
     const owner = Keypair.fromSecretKey(base58.default.decode(utils.decrypt(member.secretkey)));
     let mode = member.mode;
-    let slippage = member.qmode_slip; // 滑点
+    let slippage = member.qmode_slip; // Slippage
     if (mode == 1) {
-        slippage = member.jmode_slip; // 滑点
+        slippage = member.jmode_slip; // Slippage
     }
     let botSwapFeeRatio = await redis.get("botSwapFeeRatio");
     let solprice = await redis.get("solprice");
 
-    await bot.api.sendMessage(member.tg_id, "刮刀交易执行中..");
+    await bot.api.sendMessage(member.tg_id, "Advanced transaction is being executed..");
     console.log("slippage",slippage)
 
-    // 设置优先费用
+    // Set priority fee
     const isInputSol = inputMint === NATIVE_MINT.toBase58();
     let priorityFeeInSol = 0;
     if (isInputSol) {
@@ -279,11 +279,11 @@ async function advanceJupSwap(address, inputMint, outputMint, amount, percent, f
         const quoteResponse = await axios.request(quoteConfig);
 
         if (!quoteResponse.data || quoteResponse.data.error) {
-            await bot.api.sendMessage(member.tg_id, "获取交易报价失败");
+            await bot.api.sendMessage(member.tg_id, "Failed to get transaction quote");
             return null;
         }
         console.log("swapResponse", quoteResponse.data);
-        // 执行交换交易 - 使用和示例代码一致的API端点和参数格式
+        // Execute swap transaction - use the same API endpoint and parameter format as the example code
         const swapResponse = await axios.post('https://lite-api.jup.ag/swap/v1/swap', {
             quoteResponse: quoteResponse.data,
             userPublicKey: owner.publicKey.toString(),
@@ -299,15 +299,15 @@ async function advanceJupSwap(address, inputMint, outputMint, amount, percent, f
 
         console.log("swapResponse", swapResponse.data);
         if (!swapResponse.data || !swapResponse.data.swapTransaction) {
-            await bot.api.sendMessage(member.tg_id, "创建交易失败");
+            await bot.api.sendMessage(member.tg_id, "Failed to create transaction");
             return null;
         }
 
-        // 解码交易
+        // Decode transaction
         const swapTransactionBuf = Buffer.from(swapResponse.data.swapTransaction, 'base64');
         let transaction = VersionedTransaction.deserialize(swapTransactionBuf);
 
-        // 计算交易手续费
+        // Calculate transaction fee
         let fee = 0;
         if (isInputSol) {
             fee = (amount * Number(botSwapFeeRatio)).toFixed(0);
@@ -319,24 +319,24 @@ async function advanceJupSwap(address, inputMint, outputMint, amount, percent, f
                 fee = ((Number(tokenAmount) * price * 1e9) / solprice * Number(botSwapFeeRatio)).toFixed(0);
             }
         }
-        // 选择连接
+        // Choose connection
         let myConnection = connection;
         if (Number(mode) === 1) {
             myConnection = jitoConnection;
         }
 
-        // 如果是防夹交易模式，添加小费
+        // If anti-sandwich mode, add tip
         if (Number(mode) === 1) {
-            console.log("防夹交易模式");
-            // 获取最新的区块哈希
+            console.log("Anti-sandwich mode");
+            // Get the latest block hash
             const recentBlockHash = await connection.getLatestBlockhash();
             transaction.sign([owner]);
 
-            // 创建小费交易
+            // Create tip transaction
             const serializedTransaction = transaction.serialize();
             const base58Transaction = base58.default.encode(serializedTransaction);
 
-            // 获取小费金额
+            // Get tip amount
             let floor = await axios.get("https://bundles.jito.wtf/api/v1/bundles/tip_floor");
             let jitoset = await redis.get(member.tg_id+"jitoset");
             if (jitoset == null) {
@@ -357,31 +357,31 @@ async function advanceJupSwap(address, inputMint, outputMint, amount, percent, f
             }
 
             lamports = lamports.toFixed(0);
-            console.log("小费金额:", lamports);
+            console.log("Tip amount:", lamports);
 
-            // 创建小费转账指令
+            // Create tip transfer instruction
             const transferInstruction = SystemProgram.transfer({
-                fromPubkey: owner.publicKey, // 付款地址
-                toPubkey: new PublicKey(getRandomTipAccount()), // 收款地址
-                lamports: lamports, // 转账金额
+                fromPubkey: owner.publicKey, // Payer address
+                toPubkey: new PublicKey(getRandomTipAccount()), // Recipient address
+                lamports: lamports, // Transfer amount
             });
 
-            // 创建小费交易
+            // Create tip transaction
             const tipTransaction = new Transaction().add(transferInstruction);
             tipTransaction.recentBlockhash = recentBlockHash.blockhash;
             tipTransaction.feePayer = owner.publicKey;
             tipTransaction.sign(owner);
 
-            // 序列化小费交易
+            // Serialize tip transaction
             const serializedTipTransaction = tipTransaction.serialize();
             const base58TipTransaction = base58.default.encode(serializedTipTransaction);
 
-            // 使用 JitoJsonRpcClient 发送交易包
+            // Use JitoJsonRpcClient to send transaction bundle
             const jitoClient = new JitoJsonRpcClient('https://mainnet.block-engine.jito.wtf/api/v1', "");
             const result = await jitoClient.sendBundle([[base58Transaction, base58TipTransaction]]);
             txId = result.result;
         } else {
-            // 然后发送主交易
+            // Then send the main transaction
             transaction.sign([owner]);
             txId = await myConnection.sendRawTransaction(transaction.serialize(), {
                 skipPreflight: true,
@@ -389,27 +389,25 @@ async function advanceJupSwap(address, inputMint, outputMint, amount, percent, f
             });
         }
 
-        // 计算要记录的交易数据
-        const type = isInputSol ? "buy" : "sell";
-
+        // Handle buy-type transaction
         if (isInputSol) {
-            // 处理购买型交易
-            let normalizedAmount = amount / 1e9; // 转换为可读格式
+            // Handle buy-type transaction
+            let normalizedAmount = amount / 1e9; // Convert to readable format
             let inamount = 0;
             let price = 0;
 
-            // 发送交易确认消息
+            // Send transaction confirmation message
             const message = await bot.api.sendMessage(member.tg_id,
-                "✅已广播正在链上交易中！" + (Number(mode) == 0 ? "[" + await lanutils.lan("djck", member.tg_id) + "](https://solscan.io/tx/" + txId + ")" : "") + " \n",
+                "✅Broadcasted and being processed on-chain!" + (Number(mode) == 0 ? "[" + await lanutils.lan("djck", member.tg_id) + "](https://solscan.io/tx/" + txId + ")" : "") + " \n",
                 {
                     parse_mode: "Markdown",
                     disable_web_page_preview: true
                 }
             );
 
-            // 根据percent对象是否存在决定插入的数据库字段
+            // Insert transaction record with percent parameters
             if (percent) {
-                // 检查并设置默认值，与raydiumhelp保持一致
+                // Check and set default values, consistent with raydiumhelp
                 if (percent.stoplossamountpercent == null) {
                     percent.stoplossamountpercent = 0;
                 }
@@ -420,7 +418,7 @@ async function advanceJupSwap(address, inputMint, outputMint, amount, percent, f
                     percent.stopmaxnum = 3;
                 }
 
-                // 插入带有percent参数的交易记录
+                // Insert transaction record with percent parameters
                 await baseDao.syncQuery(
                     "INSERT INTO `appswaporder` (`address`, `token`, `intoken`, `amount`, `hash`, `time`, `type`, `dex`, `upgas`, `inamount`, `price`, `fee`, `check`, `chatid`, `messageId`, `stopearnpercent`, `stoplosspercen`, `amountpercent`, `stopmode`, `stoplossamountpercent`, `pricemaxcheck`, `stopmaxnum`, `from`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     [
@@ -450,7 +448,7 @@ async function advanceJupSwap(address, inputMint, outputMint, amount, percent, f
                     ]
                 );
             } else {
-                // 插入普通交易记录
+                // Insert regular transaction record
                 await baseDao.syncQuery(
                     "INSERT INTO `appswaporder` (`address`, `token`, `intoken`, `amount`, `hash`, `time`, `type`, `dex`, `upgas`, `inamount`, `price`, `fee`, `check`, `chatid`, `messageId`, `from`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     [
@@ -474,15 +472,20 @@ async function advanceJupSwap(address, inputMint, outputMint, amount, percent, f
                 );
             }
 
-            console.log("交易hash", txId);
+            console.log("Transaction hash", txId);
             return txId;
         }
 
-        // 卖出型交易的处理逻辑(如果需要)可以在这里添加
+        // Sell-type transaction handling logic (if needed) can be added here
 
     } catch (error) {
-        console.error("Jupiter高级交易失败:", error);
-        await bot.api.sendMessage(member.tg_id, "交易过程中出错");
+        console.error("Jupiter advanced transaction failed:", error);
+        await bot.api.sendMessage(member.tg_id, "An error occurred during the transaction");
         return null;
     }
 }
+
+module.exports = {
+    jupSwap,
+    advanceJupSwap
+};
