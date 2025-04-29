@@ -141,6 +141,78 @@ impl TokenClient {
         println!("Transferred {} tokens from {} to {}", amount, source, destination);
         Ok(())
     }
+    
+    // Burn tokens from an account
+    pub fn burn_tokens(
+        &self, 
+        token: &Pubkey, 
+        source: &Pubkey, 
+        amount: u64
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // Burn instruction
+        let burn_ix = Instruction {
+            program_id: self.program_id,
+            accounts: vec![
+                AccountMeta::new(*token, false),
+                AccountMeta::new(*source, false),
+                AccountMeta::new(self.payer.pubkey(), true),
+            ],
+            data: vec![3, // Burn instruction
+                      // In real code, we would serialize the amount here
+                     ],
+        };
+        
+        // Create and send transaction
+        let recent_blockhash = self.rpc_client.get_latest_blockhash()?;
+        let transaction = Transaction::new_signed_with_payer(
+            &[burn_ix],
+            Some(&self.payer.pubkey()),
+            &[&self.payer],
+            recent_blockhash,
+        );
+        
+        self.rpc_client.send_and_confirm_transaction(&transaction)?;
+        
+        println!("Burned {} tokens from {}", amount, source);
+        Ok(())
+    }
+    
+    // Get token balance for an account
+    pub fn get_token_balance(&self, token_account: &Pubkey) -> Result<u64, Box<dyn std::error::Error>> {
+        // In a real implementation, this would query the token account data
+        // and extract the balance field
+        
+        // For demonstration purposes, we'll just return a mock balance
+        let account_info = self.rpc_client.get_account(token_account)?;
+        
+        println!("Account {} has data of length: {}", token_account, account_info.data.len());
+        
+        // In a real implementation, we would deserialize the account data
+        // to extract the actual token balance
+        
+        // Mock balance (would be properly deserialized in real code)
+        let balance = 1000000000;
+        
+        Ok(balance)
+    }
+    
+    // Get token supply
+    pub fn get_token_supply(&self, token: &Pubkey) -> Result<u64, Box<dyn std::error::Error>> {
+        // In a real implementation, this would query the token data
+        // and extract the total supply field
+        
+        let token_info = self.rpc_client.get_account(token)?;
+        
+        println!("Token {} has data of length: {}", token, token_info.data.len());
+        
+        // In a real implementation, we would deserialize the token data
+        // to extract the actual token supply
+        
+        // Mock supply (would be properly deserialized in real code)
+        let supply = 10000000000;
+        
+        Ok(supply)
+    }
 }
 
 // Example usage
@@ -164,4 +236,15 @@ pub fn main() {
     // Transfer tokens to another account
     let another_recipient = Keypair::new();
     client.transfer_tokens(&recipient.pubkey(), &another_recipient.pubkey(), 500_000_000).unwrap();
+    
+    // Burn some tokens
+    client.burn_tokens(&token_pubkey, &recipient.pubkey(), 100_000_000).unwrap();
+    
+    // Get token balance
+    let balance = client.get_token_balance(&recipient.pubkey()).unwrap();
+    println!("Token balance: {}", balance);
+    
+    // Get token supply
+    let supply = client.get_token_supply(&token_pubkey).unwrap();
+    println!("Total token supply: {}", supply);
 }
