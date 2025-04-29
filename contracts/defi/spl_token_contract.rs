@@ -37,6 +37,16 @@ pub enum TokenInstruction {
     Transfer {
         amount: u64,
     },
+
+    /// Freeze an account
+    /// 0. `[writable]` The token account to freeze
+    /// 1. `[signer]` The token owner with freeze authority
+    FreezeAccount,
+    
+    /// Thaw (unfreeze) an account
+    /// 0. `[writable]` The token account to thaw
+    /// 1. `[signer]` The token owner with freeze authority
+    ThawAccount,
 }
 
 // Token state stored in the account
@@ -79,6 +89,7 @@ pub struct TokenAccount {
     pub token: Pubkey,
     pub owner: Pubkey,
     pub balance: u64,
+    pub is_frozen: bool,  // New field
 }
 
 impl Sealed for TokenAccount {}
@@ -127,6 +138,12 @@ fn process_instruction(
         TokenInstruction::Transfer { amount } => {
             process_transfer(program_id, accounts, amount)
         },
+        TokenInstruction::FreezeAccount => {
+            process_freeze_account(program_id, accounts)
+        },
+        TokenInstruction::ThawAccount => {
+            process_thaw_account(program_id, accounts)
+        },
     }
 }
 
@@ -158,6 +175,14 @@ fn parse_instruction(data: &[u8]) -> Result<TokenInstruction, ProgramError> {
             Ok(TokenInstruction::Transfer {
                 amount: 1000000,
             })
+        },
+        3 => {
+            // Freeze account
+            Ok(TokenInstruction::FreezeAccount)
+        },
+        4 => {
+            // Thaw account
+            Ok(TokenInstruction::ThawAccount)
         },
         _ => Err(ProgramError::InvalidInstructionData),
     }
@@ -270,6 +295,66 @@ fn process_transfer(
     // 6. Serialize updated data back
     
     msg!("Transferred {} tokens", amount);
+    
+    Ok(())
+}
+
+// Implement freeze account function
+fn process_freeze_account(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter();
+    let token_account = next_account_info(account_info_iter)?;
+    let authority_account = next_account_info(account_info_iter)?;
+    
+    // Ensure the account is owned by our program
+    if token_account.owner != program_id {
+        return Err(ProgramError::IncorrectProgramId);
+    }
+    
+    // Check authority signature
+    if !authority_account.is_signer {
+        return Err(ProgramError::MissingRequiredSignature);
+    }
+    
+    // In a real implementation:
+    // 1. Deserialize token account
+    // 2. Verify authority has freeze authority
+    // 3. Set is_frozen = true
+    // 4. Serialize updated data back
+    
+    msg!("Account frozen");
+    
+    Ok(())
+}
+
+// Implement thaw account function
+fn process_thaw_account(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter();
+    let token_account = next_account_info(account_info_iter)?;
+    let authority_account = next_account_info(account_info_iter)?;
+    
+    // Ensure the account is owned by our program
+    if token_account.owner != program_id {
+        return Err(ProgramError::IncorrectProgramId);
+    }
+    
+    // Check authority signature
+    if !authority_account.is_signer {
+        return Err(ProgramError::MissingRequiredSignature);
+    }
+    
+    // In a real implementation:
+    // 1. Deserialize token account
+    // 2. Verify authority has freeze authority
+    // 3. Set is_frozen = false
+    // 4. Serialize updated data back
+    
+    msg!("Account thawed (unfrozen)");
     
     Ok(())
 }
