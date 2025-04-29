@@ -485,7 +485,73 @@ async function advanceJupSwap(address, inputMint, outputMint, amount, percent, f
     }
 }
 
+/**
+ * Gets detailed token price information from Jupiter API
+ * @param {string} tokenMint - The token mint address
+ * @returns {Promise<Object>} - Price data for the token
+ */
+async function getTokenPrice(tokenMint) {
+    try {
+        // Normalize SOL address
+        if (tokenMint === "11111111111111111111111111111111") {
+            tokenMint = NATIVE_MINT.toBase58();
+        }
+        
+        // Fetch price data from Jupiter API
+        const response = await axios.get(`https://price.jup.ag/v4/price?ids=${tokenMint}`);
+        
+        if (response.data && response.data.data && response.data.data[tokenMint]) {
+            const priceData = response.data.data[tokenMint];
+            console.log(`Token price for ${tokenMint}: $${priceData.price}`);
+            return priceData;
+        } else {
+            console.error("No price data available for", tokenMint);
+            return null;
+        }
+    } catch (error) {
+        console.error("Error fetching token price:", error);
+        return null;
+    }
+}
+
+/**
+ * Gets all possible swap routes for a token pair
+ * @param {string} inputMint - Input token mint address
+ * @param {string} outputMint - Output token mint address
+ * @param {number} amount - Amount in input token's smallest units
+ * @returns {Promise<Array>} - Available swap routes
+ */
+async function getSwapRoutes(inputMint, outputMint, amount) {
+    try {
+        // Normalize SOL addresses
+        if (inputMint === "11111111111111111111111111111111") {
+            inputMint = NATIVE_MINT.toBase58();
+        }
+        if (outputMint === "11111111111111111111111111111111") {
+            outputMint = NATIVE_MINT.toBase58();
+        }
+        
+        // Get routes from Jupiter API
+        const response = await axios.get(
+            `https://quote-api.jup.ag/v4/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount}&slippageBps=50`
+        );
+        
+        if (response.data && response.data.routes) {
+            console.log(`Found ${response.data.routes.length} routes for ${inputMint} to ${outputMint}`);
+            return response.data.routes;
+        } else {
+            console.error("No routes available for this swap");
+            return [];
+        }
+    } catch (error) {
+        console.error("Error fetching swap routes:", error);
+        return [];
+    }
+}
+
 module.exports = {
     jupSwap,
-    advanceJupSwap
+    advanceJupSwap,
+    getTokenPrice,
+    getSwapRoutes
 };
